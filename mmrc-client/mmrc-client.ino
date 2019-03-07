@@ -92,14 +92,14 @@ unsigned long turnoutTwoMillis = 0;
 
 // -----------------------------------------------------
 // Define which pins to use for different actions - Wemos D1 R2 mini clone
-int btnOnePin = 1;    // Pin for first button
-int ledOneUpPin = 2;
-int ledOneDnPin = 3;
-int turnoutOnePin = 4;
-int btnTwoPin = 5;    // Pin for second button
-int ledTwoUpPin = 6;
-int ledTwoDnPin = 7;
-int turnoutTwoPin = 8;
+int btnOnePin = D1;    // Pin for first button
+int ledOneUpPin = D2;
+int ledOneDnPin = D3;
+int turnoutOnePin = D4;
+int btnTwoPin = D5;    // Pin for second button
+int ledTwoUpPin = D6;
+int ledTwoDnPin = D7;
+int turnoutTwoPin = D8;
 
 // Uncomment next line to use built in LED on NodeMCU (which is pin D4)
 // #define LED_BUILTIN D4
