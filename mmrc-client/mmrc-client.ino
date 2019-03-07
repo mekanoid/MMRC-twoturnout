@@ -12,7 +12,7 @@
 // -----------------------------------------------------------
 // #include <ESP8266WiFi.h>
 // #include <PubSubClient.h>
-#include <Servo.h>  
+#include <Servo.h>
 #include "MMRCsettings.h"
 
 // WiFiClient wifiClient;
@@ -60,7 +60,7 @@ int btnState = 0;     // To get two states from a momentary button
 
 // -----------------------------------------------------
 // Turnout ONE variables
-int actionOne = 0;                  // To 'remember' than an action is in progress
+int actionOne = 0;                  // To 'remember' that an action is in progress
 
 int ledOneState = 0;
 int ledOneInterval = 750;
@@ -76,7 +76,7 @@ unsigned long turnoutOneMillis = 0;
 
 // -----------------------------------------------------
 // Turonut TWO variables
-int actionTwo = 0;                  // To 'remember' than an action is in progress
+int actionTwo = 0;                  // To 'remember' that an action is in progress
 
 int ledTwoState = 0;
 int ledTwoInterval = 750;
@@ -91,15 +91,15 @@ int turnoutTwoPosition = turnoutTwoNormal;
 unsigned long turnoutTwoMillis = 0;
 
 // -----------------------------------------------------
-// Define which pins to use for different actions
-int btnOnePin = 7;    // Pin for first button
-int btnTwoPin = 8;    // Pin for second button
-int ledOneUpPin = 9;
-int ledOneDnPin = 10;
-int ledTwoUpPin = 11;
-int ledTwoDnPin = 12;
-int turnoutOnePin = 5;
-int turnoutTwoPin = 6;
+// Define which pins to use for different actions - Wemos D1 R2 mini clone
+int btnOnePin = 1;    // Pin for first button
+int ledOneUpPin = 2;
+int ledOneDnPin = 3;
+int turnoutOnePin = 4;
+int btnTwoPin = 5;    // Pin for second button
+int ledTwoUpPin = 6;
+int ledTwoDnPin = 7;
+int turnoutTwoPin = 8;
 
 // Uncomment next line to use built in LED on NodeMCU (which is pin D4)
 // #define LED_BUILTIN D4
