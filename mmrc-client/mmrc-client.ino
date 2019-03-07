@@ -10,12 +10,16 @@
 //    (at your option) any later version.
 //
 // -----------------------------------------------------------
-// #include <ESP8266WiFi.h>
-// #include <PubSubClient.h>
+#include <ESP8266WiFi.h>
+#include <PubSubClient.h>
 #include <Servo.h>
+
+#include <DNSServer.h>            //Local DNS Server used for redirecting all requests to the configuration portal
+#include <ESP8266WebServer.h>     //Local WebServer used to serve the configuration portal
+#include <WiFiManager.h>
+
 #include "MMRCsettings.h"
 
-// WiFiClient wifiClient;
 // PubSubClient client(wifiClient);
 
 // Servo initialisation
@@ -24,8 +28,8 @@ Servo turnoutTwoServo;       // Create servo object to control turnout 2
 
 // -----------------------------------------------------
 // Convert settings in MMRCsettings.h to constants and variables
-const char* ssid = SSID;
-const char* password = PASSWORD;
+//const char* ssid = SSID;
+//const char* password = PASSWORD;
 const char* mqttBrokerIP = IP;
 String cccCategory = CATEGORY;
 String cccModule = MODULE;
@@ -149,9 +153,12 @@ void setup() {
     clientID = "MMRC "+cccModule;
   }
 
+
   // Connect to wifi network
-//  wifiConnect();
-//  delay(1000);
+  WiFiManager wifiManager;
+
+  //first parameter is name of access point, second is the password
+  wifiManager.autoConnect("MMRC 2-2 Turnout", "1234");
 
   // Connect to MQTT broker and define function to handle callbacks
 //  client.setServer(mqttBrokerIP, 1883);
@@ -160,41 +167,7 @@ void setup() {
 }
 
 
-/**
- * Connects to WiFi and prints out connection information
- */
-void wifiConnect() {
-  char tmpID[clientID.length()];
-  delay(200);
 
-   // Convert String to char* for the client.subribe() function to work
-  clientID.toCharArray(tmpID, clientID.length()+1);
-
-  // Connect to WiFi
-  Serial.println();
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.print(ssid);
-//  WiFi.hostname(tmpID);
-//  WiFi.begin(ssid, password);
- 
-  // Wait for connection
-//  while (WiFi.status() != WL_CONNECTED) {
-//    delay(500);
-//    Serial.print(".");
-//  }
-  Serial.println("");
-  Serial.println("WiFi connected");
- 
-  // Print connection information
-  Serial.print("Client hostname: ");
-//  Serial.println(WiFi.hostname());
-  Serial.print("IP address: ");
-//  Serial.println(WiFi.localIP());
-  Serial.print("MAC address: ");
-//  Serial.println(WiFi.macAddress());
-  Serial.println("---");
-}
 
 
 /**
