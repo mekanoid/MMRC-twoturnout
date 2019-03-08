@@ -20,7 +20,8 @@
 
 #include "MMRCsettings.h"
 
-// PubSubClient client(wifiClient);
+WiFiClient wifiClient;
+PubSubClient client(wifiClient);
 
 // Servo initialisation
 Servo turnoutOneServo;       // Create servo object to control turnout 1
@@ -28,23 +29,25 @@ Servo turnoutTwoServo;       // Create servo object to control turnout 2
 
 // -----------------------------------------------------
 // Convert settings in MMRCsettings.h to constants and variables
-//const char* ssid = SSID;
-//const char* password = PASSWORD;
 const char* mqttBrokerIP = IP;
-String cccCategory = CATEGORY;
-String cccModule = MODULE;
-String cccObject = OBJECT;
+String deviceID = DEVICEID;
+String nodeID01 = NODEID01;
+String nodeID02 = NODEID02;
 String cccCLEES = CLEES;
 
 // -----------------------------------------------------
 // Various variable definitions
 
 // Variable for topics to subscribe to
-const int nbrTopics = 1;
-String subTopic[nbrTopics];
+const int nbrSubTopics = 2;
+String subTopic[nbrSubTopics];
 
 // Variable for topics to publish to
-String pubTopic[1];
+const int nbrPubTopics = 15;
+String pubTopic[nbrPubTopics];
+String pubTopicContent[nbrPubTopics];
+String pubTopicTurnoutOne;
+String pubTopicTurnoutTwo;
 
 // Variables for client info
 String clientID;      // Id/name for this specific client, shown i MQTT and router
@@ -96,11 +99,11 @@ unsigned long turnoutTwoMillis = 0;
 
 // -----------------------------------------------------
 // Define which pins to use for different actions - Wemos D1 R2 mini clone
-int btnOnePin = D1;    // Pin for first button
+int btnOnePin = D1;    // Pin for first turnout
 int ledOneUpPin = D2;
 int ledOneDnPin = D3;
 int turnoutOnePin = D4;
-int btnTwoPin = D5;    // Pin for second button
+int btnTwoPin = D5;    // Pin for second turnout
 int ledTwoUpPin = D6;
 int ledTwoDnPin = D7;
 int turnoutTwoPin = D8;
@@ -137,20 +140,64 @@ void setup() {
 
   // Assemble topics to subscribe and publish to
   if (cccCLEES == "1") {
-    cccCategory = "clees";
-    subTopic[0] = cccCategory+"/"+cccModule+"/cmd/turnout/"+cccObject;
-    pubTopic[0] = cccCategory+"/"+cccModule+"/rpt/turnout"+cccObject;
+    deviceID = "clees";
+//    subTopic[0] = deviceID+"/"+cccModule+"/cmd/turnout/"+cccObject;
+//    pubTopic[0] = deviceID+"/"+cccModule+"/rpt/turnout"+cccObject;
   } else {
-    subTopic[0] = "mmrc/"+cccModule+"/"+cccObject+"/"+cccCategory+"/turnout/cmd";
-    subTopic[1] = "mmrc/"+cccModule+"/"+cccObject+"/"+cccCategory+"/button/cmd";
-    pubTopic[0] = "mmrc/"+cccModule+"/"+cccObject+"/"+cccCategory+"/turnout/rpt";
+    // Subscribe
+    subTopic[0] = "mmrc/"+deviceID+"/"+nodeID01+"/turnout/set";
+    subTopic[1] = "mmrc/"+deviceID+"/"+nodeID02+"/turnout/set";
+
+    // Publish
+    pubTopic[0] = "mmrc/"+deviceID+"/$name";
+    pubTopicContent[0] = "SJ06 växelkort";
+
+    pubTopic[1] = "mmrc/"+deviceID+"/$state";
+    pubTopicContent[1] = "lost";
+
+    pubTopic[2] = "mmrc/"+deviceID+"/$nodes";
+    pubTopicContent[2] = nodeID01+","+nodeID02;
+    
+    pubTopic[3] = "mmrc/"+deviceID+"/"+nodeID01+"/$name";
+    pubTopicContent[3] = "Växelnod 1";
+
+    pubTopic[4] = "mmrc/"+deviceID+"/"+nodeID01+"/$type";
+    pubTopicContent[4] = "Turnout control";
+
+    pubTopic[5] = "mmrc/"+deviceID+"/"+nodeID01+"/$properties";
+    pubTopicContent[5] = "turnout";
+
+    pubTopic[6] = "mmrc/"+deviceID+"/"+nodeID01+"/turnout/$name";
+    pubTopicContent[6] = "Växel 1";
+
+    pubTopic[7] = "mmrc/"+deviceID+"/"+nodeID01+"/turnout/$datatype";
+    pubTopicContent[7] = "string";
+
+    pubTopic[8] = "mmrc/"+deviceID+"/"+nodeID02+"/$name";
+    pubTopicContent[8] = "Växelnod 2";
+
+    pubTopic[9] = "mmrc/"+deviceID+"/"+nodeID02+"/$type";
+    pubTopicContent[9] = "Turnout control";
+
+    pubTopic[10] = "mmrc/"+deviceID+"/"+nodeID02+"/$properties";
+    pubTopicContent[10] = "turnout";
+
+    pubTopic[11] = "mmrc/"+deviceID+"/"+nodeID02+"/turnout/$name";
+    pubTopicContent[11] = "Växel 2";
+
+    pubTopic[12] = "mmrc/"+deviceID+"/"+nodeID02+"/turnout/$datatype";
+    pubTopicContent[12] = "string";
+
+    pubTopicTurnoutOne = "mmrc/"+deviceID+"/"+nodeID01+"/turnout";
+    pubTopicTurnoutTwo = "mmrc/"+deviceID+"/"+nodeID02+"/turnout";
+
  }
 
   // Unique name for this client
   if (cccCLEES == "1") {
-    clientID = "CLEES "+cccModule;
+    clientID = "CLEES "+deviceID;
   } else {
-    clientID = "MMRC "+cccModule;
+    clientID = "MMRC "+deviceID;
   }
 
 
@@ -161,13 +208,10 @@ void setup() {
   wifiManager.autoConnect("MMRC 2-2 Turnout", "1234");
 
   // Connect to MQTT broker and define function to handle callbacks
-//  client.setServer(mqttBrokerIP, 1883);
-//  client.setCallback(mqttCallback);
+  client.setServer(mqttBrokerIP, 1883);
+  client.setCallback(mqttCallback);
 
 }
-
-
-
 
 
 /**
@@ -175,23 +219,26 @@ void setup() {
  */
 void mqttConnect() {
   char tmpTopic[254];
+  char tmpContent[254];
   char tmpID[clientID.length()];
   
   // Convert String to char* for the client.subribe() function to work
   clientID.toCharArray(tmpID, clientID.length()+1);
 
   // Loop until we're reconnected
-//  while (!client.connected()) {
+  while (!client.connected()) {
   Serial.print("MQTT connection...");
   // Attempt to connect
-//  if (client.connect(tmpID)) {
+  // boolean connect (clientID, willTopic, willQoS, willRetain, willMessage)
+//  if (client.connect(tmpID,pubTopic[1],0,true,pubTopicContent[1] )) {
+  if (client.connect(tmpID)) {
     Serial.println("connected");
     Serial.print("MQTT client id: ");
     Serial.println(tmpID);
     Serial.println("Subscribing to:");
 
     // Subscribe to all topics
-    for (int i=0; i < nbrTopics; i++){
+    for (int i=0; i < nbrSubTopics; i++){
       // Convert String to char* for the client.subribe() function to work
       subTopic[i].toCharArray(tmpTopic, subTopic[i].length()+1);
 
@@ -200,16 +247,28 @@ void mqttConnect() {
       Serial.println(tmpTopic);
 
       // ... and subscribe to topic
-//      client.subscribe(tmpTopic);
+      client.subscribe(tmpTopic);
     }
-//  } else {
+    // Publish to all topics
+    Serial.println("Publishing to:");
+    for (int i=0; i < nbrPubTopics; i++){
+      pubTopic[i].toCharArray(tmpTopic, pubTopic[i].length()+1);
+      pubTopicContent[i].toCharArray(tmpContent, pubTopicContent[i].length()+1);
+
+      Serial.print(" - ");
+      Serial.println(tmpTopic);
+      client.publish(tmpTopic, tmpContent);
+
+    }    
+
+  } else {
     Serial.print("failed, rc=");
-//    Serial.print(client.state());
+    Serial.print(client.state());
     Serial.println(" try again in 5 seconds");
     // Wait 5 seconds before retrying
     delay(5000);
-//    }
-//  }
+    }
+  }
   Serial.println("---");
 
 }
@@ -521,10 +580,10 @@ void loop()
   // -----------------------------------------------------
 
   // -----------------------------------------------------
-// Check connection to the MQTT broker. If no connection, try to reconnect
-//  if (!client.connected()) {
-//    mqttConnect();
-//    }
+  // Check connection to the MQTT broker. If no connection, try to reconnect
+  if (!client.connected()) {
+    mqttConnect();
+  }
 
   // -----------------------------------------------------
   // Wait for incoming messages
@@ -622,30 +681,6 @@ void loop()
 
     // Reset LED Two millis counter
     turnoutTwoMillis = currentMillis;
-/*
-    if (turnoutTwoState == NORMAL) {
-      Serial.println("UP");
-      digitalWrite(ledTwoUpPin, ledTwoState);
-    } else {
-      Serial.println("DOWN");
-      digitalWrite(ledTwoDnPin, ledTwoState);
-    }
-*/
-    // Temporary code to turn off blink
-/*    
-     tmpCnt = tmpCnt+1;
-    if (tmpCnt == 10) {
-      tmpCnt = 0;
-      actionTwo = 0;
-      if (turnoutTwoState == NORMAL) {
-        digitalWrite(ledTwoUpPin, HIGH);
-        digitalWrite(ledTwoDnPin, LOW);
-      } else {
-        digitalWrite(ledTwoUpPin, LOW);
-        digitalWrite(ledTwoDnPin, HIGH);
-      }
-    }
-*/
   }
 
   // -----------------------------------------------------
