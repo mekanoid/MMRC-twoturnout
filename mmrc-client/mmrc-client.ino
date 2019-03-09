@@ -43,11 +43,13 @@ const int nbrSubTopics = 2;
 String subTopic[nbrSubTopics];
 
 // Variable for topics to publish to
-const int nbrPubTopics = 15;
+const int nbrPubTopics = 13;
 String pubTopic[nbrPubTopics];
 String pubTopicContent[nbrPubTopics];
+
 String pubTopicTurnoutOne;
 String pubTopicTurnoutTwo;
+String pubTopicDeviceState;
 
 // Variables for client info
 String clientID;      // Id/name for this specific client, shown i MQTT and router
@@ -82,7 +84,7 @@ int turnoutOnePosition = turnoutOneNormal;
 unsigned long turnoutOneMillis = 0;
 
 // -----------------------------------------------------
-// Turonut TWO variables
+// Turnout TWO variables
 int actionTwo = 0;                  // To 'remember' that an action is in progress
 
 int ledTwoState = 0;
@@ -188,9 +190,11 @@ void setup() {
     pubTopic[12] = "mmrc/"+deviceID+"/"+nodeID02+"/turnout/$datatype";
     pubTopicContent[12] = "string";
 
+    // Often used publish topics
     pubTopicTurnoutOne = "mmrc/"+deviceID+"/"+nodeID01+"/turnout";
     pubTopicTurnoutTwo = "mmrc/"+deviceID+"/"+nodeID02+"/turnout";
-
+    pubTopicDeviceState = pubTopic[1];
+    
  }
 
   // Unique name for this client
@@ -200,11 +204,11 @@ void setup() {
     clientID = "MMRC "+deviceID;
   }
 
-
   // Connect to wifi network
   WiFiManager wifiManager;
 
-  //first parameter is name of access point, second is the password
+  // Start the WifiManager for connection to network
+  // First parameter is name of access point, second is the password
   wifiManager.autoConnect("MMRC 2-2 Turnout", "1234");
 
   // Connect to MQTT broker and define function to handle callbacks
@@ -215,23 +219,25 @@ void setup() {
 
 
 /**
- * (Re)connects to MQTT broker and subscribes to one or more topics
+ * (Re)connects to MQTT broker and subscribes/publishes to one or more topics
  */
 void mqttConnect() {
   char tmpTopic[254];
   char tmpContent[254];
   char tmpID[clientID.length()];
+  char* tmpMessage = "lost";
   
   // Convert String to char* for the client.subribe() function to work
   clientID.toCharArray(tmpID, clientID.length()+1);
+  pubTopicDeviceState.toCharArray(tmpTopic, pubTopicDeviceState.length()+1);
 
   // Loop until we're reconnected
   while (!client.connected()) {
   Serial.print("MQTT connection...");
   // Attempt to connect
-  // boolean connect (clientID, willTopic, willQoS, willRetain, willMessage)
-//  if (client.connect(tmpID,pubTopic[1],0,true,pubTopicContent[1] )) {
-  if (client.connect(tmpID)) {
+  // boolean connect (tmpID, pubTopicDeviceState, willQoS, willRetain, willMessage)
+  if (client.connect(tmpID,tmpTopic,0,true,tmpMessage)) {
+//  if (client.connect(tmpID)) {
     Serial.println("connected");
     Serial.print("MQTT client id: ");
     Serial.println(tmpID);
@@ -249,26 +255,40 @@ void mqttConnect() {
       // ... and subscribe to topic
       client.subscribe(tmpTopic);
     }
+
     // Publish to all topics
     Serial.println("Publishing to:");
     for (int i=0; i < nbrPubTopics; i++){
+      // Convert String to char* for the client.publish() function to work
       pubTopic[i].toCharArray(tmpTopic, pubTopic[i].length()+1);
       pubTopicContent[i].toCharArray(tmpContent, pubTopicContent[i].length()+1);
 
+      // ... print topic
       Serial.print(" - ");
-      Serial.println(tmpTopic);
+      Serial.print(tmpTopic);
+      Serial.print(" = ");
+      Serial.println(tmpContent);
+
+      // ... and subscribe to topic
       client.publish(tmpTopic, tmpContent);
 
     }    
 
   } else {
+
+    // Show why the connection failed
     Serial.print("failed, rc=");
     Serial.print(client.state());
     Serial.println(" try again in 5 seconds");
+
     // Wait 5 seconds before retrying
     delay(5000);
+
     }
   }
+
+  // Publish new device state = active
+  mqttPublish(pubTopicDeviceState, "ready", 1);
   Serial.println("---");
 
 }
@@ -281,38 +301,36 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   payload[length] = '\0';
 
   // Print the topic
-  Serial.print("Message arrived [");
+  Serial.print("Incoming: ");
   Serial.print(topic);
-  Serial.print("] ");
+  Serial.print(" = ");
 
   // Make strings and print payload
   String msg = String((char*)payload);
   String tpc = String((char*)topic);
   Serial.println(msg);
 
-  // Send topic and payload to be interpreted
-  mqttResolver(tpc, msg);
-}
-
-
-/**
- * Resolves messages from MQTT broker 
- */
-void mqttResolver(String sbTopic, String sbPayload) {
-
-  // Check first topic
-  if (sbTopic == subTopic[0]){
+  // Check set command for turnout ONE
+  if (tpc == subTopic[0] && actionOne == 0){
 
     // Check message
-    if (sbPayload == "0") {
-      // Turn LED on and report back (via MQTT)
-      digitalWrite(LED_BUILTIN, HIGH);
-      mqttPublish(pubTopic[0], "0");
+    if (msg == "normal" && turnoutOneState == REVERSE) {
+      turnoutOneStart();
     }
-    if (sbPayload == "1") {
-      // Turn LED off and don't report back (via MQTT)
-      digitalWrite(LED_BUILTIN, LOW);
-      mqttPublish(pubTopic[0], "1");
+    if (msg == "reverse" && turnoutOneState == NORMAL) {
+      turnoutOneStart();
+    }
+  }
+
+  // Check set command for turnout TWO
+  if (tpc == subTopic[1] && actionTwo == 0){
+
+    // Check message
+    if (msg == "normal" && turnoutTwoState == REVERSE) {
+      turnoutTwoStart();
+    }
+    if (msg == "reverse" && turnoutTwoState == NORMAL) {
+      turnoutTwoStart();
     }
   }
 
@@ -322,7 +340,7 @@ void mqttResolver(String sbTopic, String sbPayload) {
 /**
  * Publish messages to MQTT broker 
  */
-void mqttPublish(String pbTopic, String pbPayload) {
+void mqttPublish(String pbTopic, String pbPayload, boolean retained) {
 
   // Convert String to char* for the client.publish() function to work
   char msg[pbPayload.length()+1];
@@ -331,18 +349,18 @@ void mqttPublish(String pbTopic, String pbPayload) {
   pbTopic.toCharArray(tpc, pbTopic.length()+1);
 
   // Report back to pubTopic[]
-//  int check = client.publish(tpc, msg);
+  client.publish(tpc, msg, retained);
 
   // TODO check "check" integer to see if all went ok
 
   // Print information
-  Serial.print("Message sent    [");
+  Serial.print("Publish: ");
   Serial.print(pbTopic);
-  Serial.print("] ");
+  Serial.print(" = ");
   Serial.println(pbPayload);
 
   // Action 1 is executed, ready for new action
-  actionOne = 0;
+//  actionOne = 0;
 
 }
 
@@ -355,12 +373,13 @@ void turnoutOneStart() {
   digitalWrite(ledOneUpPin, LOW);
   digitalWrite(ledOneDnPin, LOW);
 
+  // Publish moving message
+  mqttPublish(pubTopicTurnoutOne, "moving", 1);
+
   // Publish button press
   if (turnoutOneState == NORMAL) {
-      // mqttPublish(subTopic[0], "1");
       turnoutOneState = REVERSE;
   } else {
-      // mqttPublish(subTopic[0], "0");
       turnoutOneState = NORMAL;
     }
     
@@ -391,16 +410,17 @@ void turnoutOneStart() {
  */
 void turnoutTwoStart()
 {
-  // Turn off bith LED
+  // Turn off both LED
   digitalWrite(ledTwoUpPin, LOW);
   digitalWrite(ledTwoDnPin, LOW);
 
+  // Publish moving message
+  mqttPublish(pubTopicTurnoutTwo, "moving", 1);
+
   // Publish button press
   if (turnoutTwoState == NORMAL) {
-      // mqttPublish(subTopic[0], "1");
       turnoutTwoState = REVERSE;
   } else {
-      // mqttPublish(subTopic[0], "0");
       turnoutTwoState = NORMAL;
   }
     
@@ -442,23 +462,26 @@ void turnoutOneMove()
     // Check if we reached the right position
     if (turnoutOnePosition >= turnoutOneNormal) {
 
+      // Debug
+      Serial.print(" - Stopped");
+
       // Set max position (useful if we take big steps...)
       turnoutOnePosition = turnoutOneNormal;
 
       // End this action and allow for the next
       actionOne = 0;
 
+      // Publish turnout final state
+      mqttPublish(pubTopicTurnoutOne, "normal", 1);
+
       // Set led status
       digitalWrite(ledOneUpPin, HIGH);
       digitalWrite(ledOneDnPin, LOW);
-
-    // Debug
-      Serial.print(" - Stopped");
     }
 
  } else {
 
-    // Count upn the position by [turnoutOneStep] steps
+    // Count up the position by [turnoutOneStep] steps
     turnoutOnePosition = turnoutOnePosition - turnoutOneStep;
 
     // Debug
@@ -467,18 +490,21 @@ void turnoutOneMove()
     // Check if we reached the right position
     if (turnoutOnePosition <= turnoutOneReverse) {
 
+      // Debug
+      Serial.print(" - Stopped");
+
       // Set min position (useful if we take big steps...)
       turnoutOnePosition = turnoutOneReverse;
 
       // End this action and allow for the next
       actionOne = 0;
 
+      // Publish turnout final state
+      mqttPublish(pubTopicTurnoutOne, "reverse", 1);
+
       // Set led status
       digitalWrite(ledOneUpPin, LOW);
       digitalWrite(ledOneDnPin, HIGH);
-
-    // Debug
-      Serial.print(" - Stopped");
     }
 
   }
@@ -513,23 +539,27 @@ void turnoutTwoMove()
     // Check if we reached the right position
     if (turnoutTwoPosition >= turnoutTwoNormal) {
 
+      // Debug
+      Serial.print(" - Stopped");
+
       // Set max position (useful if we take big steps...)
       turnoutTwoPosition = turnoutTwoNormal;
 
       // End this action and allow for the next
       actionTwo = 0;
 
+      // Publish turnout final state
+      mqttPublish(pubTopicTurnoutTwo, "normal", 1);
+
       // Set led status
       digitalWrite(ledTwoUpPin, HIGH);
       digitalWrite(ledTwoDnPin, LOW);
 
-    // Debug
-      Serial.print(" - Stopped");
     }
 
  } else {
 
-    // Count upn the position by [turnoutTwoStep] steps
+    // Count up the position by [turnoutTwoStep] steps
     turnoutTwoPosition = turnoutTwoPosition - turnoutTwoStep;
 
     // Debug
@@ -538,18 +568,22 @@ void turnoutTwoMove()
     // Check if we reached the right position
     if (turnoutTwoPosition <= turnoutTwoReverse) {
 
+      // Debug
+      Serial.print(" - Stopped");
+
       // Set min position (useful if we take big steps...)
       turnoutTwoPosition = turnoutTwoReverse;
 
       // End this action and allow for the next
       actionTwo = 0;
 
+      // Publish turnout final state
+      mqttPublish(pubTopicTurnoutTwo, "reverse", 1);
+      
       // Set led status
       digitalWrite(ledTwoUpPin, LOW);
       digitalWrite(ledTwoDnPin, HIGH);
 
-    // Debug
-      Serial.print(" - Stopped");
     }
 
   }
@@ -574,7 +608,7 @@ void loop()
 {
 
   unsigned long currentMillis = millis();
-  
+
   // -----------------------------------------------------
   // -- Waiting for actions
   // -----------------------------------------------------
@@ -586,8 +620,8 @@ void loop()
   }
 
   // -----------------------------------------------------
-  // Wait for incoming messages
-//  client.loop();
+  // Wait for incoming MQTT messages
+  client.loop();
 
   // -----------------------------------------------------
   // Check for button ONE press
@@ -696,8 +730,8 @@ void loop()
     ledOneMillis = currentMillis;
 
     // Debug
-    Serial.print("Start Led ONE - ");
-    Serial.println(ledOneState);
+//    Serial.print("Start Led ONE - ");
+//    Serial.println(ledOneState);
 
   }
 
@@ -714,8 +748,8 @@ void loop()
     ledTwoMillis = currentMillis;
 
     // Debug
-    Serial.print("Start Led TWO - ");
-    Serial.println(ledTwoState);
+//    Serial.print("Start Led TWO - ");
+//    Serial.println(ledTwoState);
 
   }
 }
