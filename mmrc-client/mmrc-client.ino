@@ -20,6 +20,7 @@
 
 #include "MMRCsettings.h"
 
+// Wifi initialisation
 WiFiClient wifiClient;
 PubSubClient client(wifiClient);
 
@@ -38,19 +39,6 @@ String cccCLEES = CLEES;
 // -----------------------------------------------------
 // Various variable definitions
 
-// Variable for topics to subscribe to
-const int nbrSubTopics = 2;
-String subTopic[nbrSubTopics];
-
-// Variable for topics to publish to
-const int nbrPubTopics = 13;
-String pubTopic[nbrPubTopics];
-String pubTopicContent[nbrPubTopics];
-
-String pubTopicTurnoutOne;
-String pubTopicTurnoutTwo;
-String pubTopicDeviceState;
-
 // Variables for client info
 String clientID;      // Id/name for this specific client, shown i MQTT and router
 
@@ -66,6 +54,29 @@ int REVERSE = 1;
 int tmpCnt = 0;
 int tempCnt = 0;
 int btnState = 0;     // To get two states from a momentary button
+
+// Select which pin will trigger the configuration portal
+// #define TRIGGER_PIN D0
+
+// Uncomment next line to use built in LED on NodeMCU (which is pin D4)
+// #define LED_BUILTIN D4
+
+// -----------------------------------------------------
+// Topic variables
+
+// Variable for topics to subscribe to
+const int nbrSubTopics = 2;
+String subTopic[nbrSubTopics];
+
+// Variable for topics to publish to
+const int nbrPubTopics = 13;
+String pubTopic[nbrPubTopics];
+String pubTopicContent[nbrPubTopics];
+
+// Often used topics
+String pubTopicTurnoutOne;
+String pubTopicTurnoutTwo;
+String pubTopicDeviceState;
 
 // -----------------------------------------------------
 // Turnout ONE variables
@@ -110,9 +121,6 @@ int ledTwoUpPin = D6;
 int ledTwoDnPin = D7;
 int turnoutTwoPin = D8;
 
-// Uncomment next line to use built in LED on NodeMCU (which is pin D4)
-// #define LED_BUILTIN D4
-
 
 /*
  * Standard setup function
@@ -129,6 +137,7 @@ void setup() {
   pinMode(ledOneDnPin, OUTPUT);
   pinMode(ledTwoUpPin, OUTPUT);
   pinMode(ledTwoDnPin, OUTPUT);
+  pinMode(TRIGGER_PIN, INPUT);    // Trigger pin for configuration portal
 
   // Attach servos to PWM pins
   turnoutOneServo.attach(turnoutOnePin); 
@@ -143,6 +152,7 @@ void setup() {
   // Assemble topics to subscribe and publish to
   if (cccCLEES == "1") {
     deviceID = "clees";
+// CLEES support not yet implemented
 //    subTopic[0] = deviceID+"/"+cccModule+"/cmd/turnout/"+cccObject;
 //    pubTopic[0] = deviceID+"/"+cccModule+"/rpt/turnout"+cccObject;
   } else {
@@ -154,6 +164,7 @@ void setup() {
     pubTopic[0] = "mmrc/"+deviceID+"/$name";
     pubTopicContent[0] = "SJ06 växelkort";
 
+    // The following topic is no longer needed
     pubTopic[1] = "mmrc/"+deviceID+"/$state";
     pubTopicContent[1] = "lost";
 
@@ -234,10 +245,10 @@ void mqttConnect() {
   // Loop until we're reconnected
   while (!client.connected()) {
   Serial.print("MQTT connection...");
+
   // Attempt to connect
   // boolean connect (tmpID, pubTopicDeviceState, willQoS, willRetain, willMessage)
   if (client.connect(tmpID,tmpTopic,0,true,tmpMessage)) {
-//  if (client.connect(tmpID)) {
     Serial.println("connected");
     Serial.print("MQTT client id: ");
     Serial.println(tmpID);
@@ -271,7 +282,6 @@ void mqttConnect() {
 
       // ... and subscribe to topic
       client.publish(tmpTopic, tmpContent);
-
     }    
 
   } else {
@@ -283,7 +293,6 @@ void mqttConnect() {
 
     // Wait 5 seconds before retrying
     delay(5000);
-
     }
   }
 
@@ -351,16 +360,11 @@ void mqttPublish(String pbTopic, String pbPayload, boolean retained) {
   // Report back to pubTopic[]
   client.publish(tpc, msg, retained);
 
-  // TODO check "check" integer to see if all went ok
-
   // Print information
   Serial.print("Publish: ");
   Serial.print(pbTopic);
   Serial.print(" = ");
   Serial.println(pbPayload);
-
-  // Action 1 is executed, ready for new action
-//  actionOne = 0;
 
 }
 
@@ -381,7 +385,7 @@ void turnoutOneStart() {
       turnoutOneState = REVERSE;
   } else {
       turnoutOneState = NORMAL;
-    }
+  }
     
   // Action ONE is executing, new actions forbidden
   actionOne = 1;
@@ -444,6 +448,7 @@ void turnoutTwoStart()
   Serial.print(" - Turnout millis = ");
   Serial.println(turnoutTwoMillis);
 }
+
 
 /**
  * Move servo for turnout ONE
@@ -601,6 +606,7 @@ void turnoutTwoMove()
     Serial.println(turnoutTwoPosition);
 }
 
+
 /**
  * Main loop
  */
@@ -610,8 +616,8 @@ void loop()
   unsigned long currentMillis = millis();
 
   // -----------------------------------------------------
-  // -- Waiting for actions
   // -----------------------------------------------------
+  // -- Waiting for actions
 
   // -----------------------------------------------------
   // Check connection to the MQTT broker. If no connection, try to reconnect
@@ -622,6 +628,23 @@ void loop()
   // -----------------------------------------------------
   // Wait for incoming MQTT messages
   client.loop();
+
+/*
+  // Trigger configuration portal
+  if (digitalRead(TRIGGER_PIN) == LOW) {
+    WiFiManager wifiManager;
+    if (!wifiManager.startConfigPortal("MMRC 2-2 Turnout")) {
+
+      Serial.println("Failed to connect and hit timeout");
+      delay(3000);
+
+      // Reset and try again
+      ESP.reset();
+      delay(5000);
+    }
+    Serial.println("Connected...yeey :)");
+  }
+*/
 
   // -----------------------------------------------------
   // Check for button ONE press
@@ -645,9 +668,10 @@ void loop()
     turnoutTwoStart();
   }
 
+
+  // -----------------------------------------------------
   // -----------------------------------------------------
   // -- Multitasking actions
-  // -----------------------------------------------------
 
   // -----------------------------------------------------
   // Check if it is time to blink turnout ONE Leds
